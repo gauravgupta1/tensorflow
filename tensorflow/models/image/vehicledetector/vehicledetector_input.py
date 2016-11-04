@@ -51,7 +51,10 @@ def read_car_ims(filename_queue, class_label, eval_data=False):
     resized_image = tf.image.resize_images(orig_image, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
     print_tensor_info(resized_image)
 
+    #whitened_image = resized_image
     whitened_image = tf.image.per_image_whitening(resized_image)
+    #float_image =    tf.image.per_image_standardization(resized_image)
+    #whitened_image = tf.image.per_image_standardization(resized_image)
     print_tensor_info(whitened_image)
 
 
@@ -159,25 +162,55 @@ def inputs(eval_data, data_dir, batch_size):
                              min_fraction_of_examples_in_queue)
 
     images, labels = _generate_image_and_label_batch(datalist, min_queue_examples, batch_size, shuffle=False)               
-
-    # init = tf.initialize_all_variables()
-    # sess = tf.Session()
-    # with sess as sess:
-    #     sess.run(init)
-    #     coord = tf.train.Coordinator()
-    #     threads = tf.train.start_queue_runners(coord=coord)
-    #     img, label = sess.run([images, labels])
-    #     for i in xrange(10):
-    #         name = os.path.join('/tmp/test', str(i) +'.jpeg')
-    #         print(label[i])
-    #         print(name)
-    #         scipy.misc.imsave(name, img[i])
-    #     coord.request_stop()
-    #     coord.join(threads)
-    # print('written')
+    print(images.get_shape())
+    init = tf.initialize_all_variables()
+    sess = tf.Session()
+    with sess as sess:
+        sess.run(init)
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(coord=coord)
+        img, label = sess.run([images, labels])
+        for i in xrange(10):
+            name = os.path.join('/tmp/test', str(i) +'.jpeg')
+            print(label[i])
+            print(name)
+            print(img[i].shape)
+            scipy.misc.imsave(name, img[i])
+        coord.request_stop()
+        coord.join(threads)
+    print('written')
 
     return images, labels
         
-    
-    
-          
+def read_image(file_path, batch_size):
+
+    """ 
+    Input:
+    file_path: must be a jpg image (not png)
+
+    """
+    filenames = [file_path]
+    filename_queue = tf.train.string_input_producer(filenames)
+    read_image_data = read_car_ims(filename_queue, 1, False)
+
+    temp = [read_image_data.floatimage]
+    read_image_data.floatimage = tf.train.batch(
+        temp, batch_size=batch_size)
+    print (read_image_data.floatimage.get_shape())
+
+    init = tf.initialize_all_variables()
+    sess = tf.Session()
+    with sess as sess:
+        sess.run(init)
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(coord=coord)
+        img = sess.run(read_image_data.floatimage)
+        for i in xrange(2):
+            name = os.path.join('/tmp/test', str(i) +'.jpeg')
+            print(name)
+            print(img[i].shape)
+            scipy.misc.imsave(name, img[i])
+        coord.request_stop()
+        coord.join(threads)
+    print('written')
+    return read_image_data.floatimage

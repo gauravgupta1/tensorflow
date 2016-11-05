@@ -25,7 +25,7 @@ tf.app.flags.DEFINE_string('eval_dir', '/tmp/vehicledetector_eval',
 
 tf.app.flags.DEFINE_string('eval_data', 'test', """Either 'test' or 'train_eval'""")
 
-tf.app.flags.DEFINE_string('checkpoint_dir', '/tmp/vehicledetector_train', """Directory where to read model checkpoints.""")
+tf.app.flags.DEFINE_string('checkpoint_dir', '/home/gauravgupta/workspace/mytensorflow/tensorflow/tensorflow/models/image/vehicledetector/trainedmodel', """Directory where model is saved""")
 
 tf.app.flags.DEFINE_integer('eval_interval_secs', 60 * 1, """How often to run the eval.""")
 
@@ -67,6 +67,7 @@ def eval_once(saver, summary_writer, top_k_op, summary_op):
             step = 0
             while step < num_iter and not coord.should_stop():
                 predictions = sess.run([top_k_op])
+                print(predictions)
                 true_count += np.sum(predictions)
                 step += 1
 

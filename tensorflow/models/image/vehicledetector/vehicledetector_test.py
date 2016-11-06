@@ -10,6 +10,8 @@ import tensorflow as tf
 import vehicledetector
 import vehicledetector_input
 
+import cv2
+
 FLAGS = tf.app.flags.FLAGS
 
 #tf.app.flags.DEFINE_integer('batch_size', 128,
@@ -19,10 +21,10 @@ tf.app.flags.DEFINE_string('checkpoint_dir', '/home/gauravgupta/workspace/mytens
 
 tf.app.flags.DEFINE_string('num_examples', 1, """Number of examples to run""")
 
-def evaluate(file_path):
+def evaluate(file_path, y1, x1, h, w):
 
     with tf.Graph().as_default() as g:
-        image = vehicledetector_input.read_image(file_path, FLAGS.batch_size)
+        image = vehicledetector_input.read_image(file_path, y1, x1, h, w, FLAGS.batch_size)
 
         logits = vehicledetector.inference(image)
         _, top_k_pred = tf.nn.top_k(logits, k=1)
@@ -49,12 +51,21 @@ def evaluate(file_path):
             coord.request_stop()
             coord.join(threads, stop_grace_period_secs=10)
 
+    cv_img = cv2.imread(file_path)
+    cv2.rectangle(cv_img, (x1, y1), (x1+w, y1+h), (0,255,0), 1)
+    cv2.imshow("output", cv_img)
+    cv2.waitKey(0)
+
 def main(argv):
     print ("vehicledetector test:" + argv[1])
     if not tf.gfile.Exists(argv[1]):
         print("File does not exist!")
         exit(0)
-    evaluate(argv[1])
+    x1 = int(argv[2])
+    y1 = int(argv[3])
+    w = int(argv[4])
+    h = int(argv[5])
+    evaluate(argv[1], y1, x1, h, w)
     
 if __name__ == '__main__':
     tf.app.run()

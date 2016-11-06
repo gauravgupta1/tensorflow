@@ -62,7 +62,40 @@ def read_car_ims(filename_queue, class_label, eval_data=False):
     result.floatimage = whitened_image
 
     return result
+
+def read_image_bounding_box(filename_queue, y1, x1, height, width):
+    """Reads and parses image from a jpg.
+
+    Recommendation: @TODO parrallelism is possible
+
+    Args:
+      filename_queue: path for one file
+      y1
+      x1
+      height
+      width
     
+    Returns:
+      Single image in float
+    """
+
+    reader = tf.WholeFileReader()
+    key, value = reader.read(filename_queue)
+    orig_image = tf.image.decode_jpeg(value, channels=3)
+    #orig_image = tf.image.decode_png(value, channels=3)
+
+    cropped_image = tf.image.crop_to_bounding_box(orig_image, y1, x1, height, width)
+    resized_image = tf.image.resize_images(cropped_image, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
+    print_tensor_info(resized_image)
+
+    #whitened_image = resized_image
+    whitened_image = tf.image.per_image_whitening(resized_image)
+    print_tensor_info(whitened_image)
+
+    float_image = whitened_image
+
+    return float_image
+
 
 def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, shuffle, eval_data):
     """Construct a queued batch of images and labels.
@@ -123,8 +156,6 @@ def distorted_inputs(data_dir, batch_size):
       images: Images: 4D tensor of [batch_size, IMAGE_SIZE_W, IMAGE_SIZE_H, 3] size.
       labels: Lables. 1D tensor of [batch_size] size.
     """
-
-
 
 def inputs(eval_data, data_dir, batch_size):
     """Construct input for VEHICLEDETECTOR evaluation using the Reader ops.
@@ -200,7 +231,7 @@ def inputs(eval_data, data_dir, batch_size):
 
     return images, labels
         
-def read_image(file_path, batch_size):
+def read_image(file_path, y1, x1, height, width, batch_size):
 
     """ 
     Input:
@@ -209,12 +240,11 @@ def read_image(file_path, batch_size):
     """
     filenames = [file_path]
     filename_queue = tf.train.string_input_producer(filenames)
-    read_image_data = read_car_ims(filename_queue, 1, False)
+    image_data = read_image_bounding_box(filename_queue, y1, x1, height, width)
 
-    temp = [read_image_data.floatimage]
-    read_image_data.floatimage = tf.train.batch(
-        temp, batch_size=batch_size)
-    print (read_image_data.floatimage.get_shape())
+    temp = [image_data]
+    image_data = tf.train.batch(temp, batch_size=batch_size)
+    print (image_data.get_shape())
 
     init = tf.initialize_all_variables()
     sess = tf.Session()
@@ -222,7 +252,7 @@ def read_image(file_path, batch_size):
         sess.run(init)
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
-        img = sess.run(read_image_data.floatimage)
+        img = sess.run(image_data)
         for i in xrange(2):
             name = os.path.join('/tmp/test', str(i) +'.jpeg')
             print(name)
@@ -231,4 +261,4 @@ def read_image(file_path, batch_size):
         coord.request_stop()
         coord.join(threads)
     print('written')
-    return read_image_data.floatimage
+    return image_data

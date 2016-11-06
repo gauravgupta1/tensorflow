@@ -14,7 +14,7 @@ IMAGE_SIZE_H = 40
 
 NUM_CLASSES = 2
 # 2*10000 images (10000 each for classes: 0 and 1)
-NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 20000
+NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 30000
 NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 2000
 
 class CARIMSRecord(object):
@@ -64,7 +64,7 @@ def read_car_ims(filename_queue, class_label, eval_data=False):
     return result
     
 
-def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, shuffle):
+def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, shuffle, eval_data):
     """Construct a queued batch of images and labels.
     
     Args:
@@ -80,22 +80,31 @@ def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, s
 
     """
     num_preprocess_threads = 16
+    if not eval_data:
+        local_batch_size = batch_size // 2
+    else:
+        local_batch_size = batch_size
+        
     images0, label_batch0 = tf.train.batch(
         data_list[0],
-        batch_size=64,
+        batch_size=local_batch_size,
         num_threads=num_preprocess_threads,
         capacity=min_queue_examples + 3 * batch_size)
-    images1, label_batch1 = tf.train.batch(
-        data_list[1],
-        batch_size=64,
-        num_threads=num_preprocess_threads,
-        capacity=min_queue_examples + 3 * batch_size)
-    images2 = tf.concat(0, [images0, images1])
-    label_batch2 = tf.concat(0, [label_batch0, label_batch1])
-    print(images2.get_shape())
+    if not eval_data:
+        images1, label_batch1 = tf.train.batch(
+            data_list[1],
+            batch_size=local_batch_size,
+            num_threads=num_preprocess_threads,
+            capacity=min_queue_examples + 3 * batch_size)
+        images = tf.concat(0, [images0, images1])
+        label_batch = tf.concat(0, [label_batch0, label_batch1])
+    else:
+        images = images0
+        label_batch = label_batch0
+
     if shuffle:
         images, label_batch = tf.random_shuffle(
-            (images2, label_batch2))
+            (images, label_batch))
 
     print(images.get_shape())
     tf.image_summary('images', images)
@@ -145,14 +154,8 @@ def inputs(eval_data, data_dir, batch_size):
         lowrange = 10001
         highrange = 11001
         num_examples_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_EVAL
-        
-    del filenames[:]
-    for i in range(lowrange, highrange):
-        filename = data_dir + "/class0/negative" + str(i).zfill(6) + ".jpg"
-        filenames.append(filename)
-    filename_queue = tf.train.string_input_producer(filenames)
-    read_input_no_vehicle = read_car_ims(filename_queue, 0, eval_data)
 
+    # positive training data
     for i in range(lowrange, highrange):
         filename = matfile['annotations'][i-1].relative_im_path
         filename = filename.replace("car_ims", "")
@@ -161,13 +164,22 @@ def inputs(eval_data, data_dir, batch_size):
     filename_queue1 = tf.train.string_input_producer(filenames1)
     read_input_vehicle = read_car_ims(filename_queue1, 1, eval_data)
 
+    # negative training data
+    del filenames[:]
+    for i in range(lowrange, highrange):
+        filename = data_dir + "/class0/negative" + str(i).zfill(6) + ".jpg"
+        filenames.append(filename)
+    filename_queue = tf.train.string_input_producer(filenames)
+    read_input_no_vehicle = read_car_ims(filename_queue, 0, eval_data)
+    
     datalist = [(read_input_no_vehicle.floatimage, read_input_no_vehicle.label), (read_input_vehicle.floatimage, read_input_vehicle.label)] 
+    #datalist = [(read_input_vehicle.floatimage, read_input_vehicle.label), (read_input_no_vehicle.floatimage, read_input_no_vehicle.label)] 
 
     min_fraction_of_examples_in_queue = 0.4
     min_queue_examples = int(num_examples_per_epoch *
                              min_fraction_of_examples_in_queue)
 
-    images, labels = _generate_image_and_label_batch(datalist, min_queue_examples, batch_size, shuffle=True)               
+    images, labels = _generate_image_and_label_batch(datalist, min_queue_examples, batch_size, shuffle=False, eval_data=eval_data)               
 
     # init = tf.initialize_all_variables()
     # sess = tf.Session()

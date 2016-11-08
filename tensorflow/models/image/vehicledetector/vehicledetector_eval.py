@@ -44,7 +44,6 @@ def eval_once(saver, summary_writer, logits, top_k_op, summary_op):
       summary_op: Summary op.
     """
     with tf.Session() as sess:
-        print('test1')
         ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(sess, ckpt.model_checkpoint_path)
@@ -57,9 +56,7 @@ def eval_once(saver, summary_writer, logits, top_k_op, summary_op):
         coord = tf.train.Coordinator()
         try:
             threads = []
-            print('test2')
             for qr in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
-                print('test3')
                 threads.extend(qr.create_threads(sess, coord=coord, daemon=True, start=True))
             num_iter = int(math.ceil(FLAGS.num_examples / FLAGS.batch_size))
             true_count = 0
@@ -73,13 +70,10 @@ def eval_once(saver, summary_writer, logits, top_k_op, summary_op):
 
             precision = true_count / total_sample_count
             print('%s: precision @ 1 = %.3f' % (datetime.now(), precision))
-            print('test4')
             summary = tf.Summary()
             summary.ParseFromString(sess.run(summary_op))
             summary.value.add(tag='Precision @ 1', simple_value=precision)
-            print('test5')
             summary_writer.add_summary(summary, global_step)
-            print('test6')
         except Exception as e:
             coord.request_stop(e)
 

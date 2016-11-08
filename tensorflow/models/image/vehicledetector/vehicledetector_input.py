@@ -14,7 +14,7 @@ IMAGE_SIZE_H = 40
 
 NUM_CLASSES = 2
 # 2*10000 images (10000 each for classes: 0 and 1)
-NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 30000
+NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 140000
 NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 2000
 
 class CARIMSRecord(object):
@@ -113,31 +113,41 @@ def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, s
 
     """
     num_preprocess_threads = 16
+    
     if not eval_data:
-        local_batch_size = batch_size // 2
+        vehicle_batch_size = batch_size // 4
+        non_vehicle_batch_size = (batch_size*3) // 4
     else:
-        local_batch_size = batch_size
+        vehicle_batch_size = batch_size
+        non_vehicle_batch_size = batch_size // 4
         
     images0, label_batch0 = tf.train.batch(
         data_list[0],
-        batch_size=local_batch_size,
+        batch_size=vehicle_batch_size,
         num_threads=num_preprocess_threads,
-        capacity=min_queue_examples + 3 * batch_size)
+        capacity=min_queue_examples + 3 * vehicle_batch_size)
     if not eval_data:
         images1, label_batch1 = tf.train.batch(
             data_list[1],
-            batch_size=local_batch_size,
+            batch_size=non_vehicle_batch_size,
             num_threads=num_preprocess_threads,
-            capacity=min_queue_examples + 3 * batch_size)
+            capacity=min_queue_examples + 3 * non_vehicle_batch_size)
         images = tf.concat(0, [images0, images1])
         label_batch = tf.concat(0, [label_batch0, label_batch1])
     else:
         images = images0
         label_batch = label_batch0
 
+    # images, label_batch = tf.train.batch(
+    #     data_list,
+    #     batch_size=batch_size,
+    #     enqueue_many=True,
+    #     num_threads=num_preprocess_threads,
+    #     capacity=min_queue_examples + 3 * vehicle_batch_size)
+        
     if shuffle:
-        images, label_batch = tf.random_shuffle(
-            (images, label_batch))
+        images = tf.random_shuffle(images)
+        label_batch = tf.random_shuffle(label_batch)
 
     print(images.get_shape())
     tf.image_summary('images', images)
@@ -178,33 +188,35 @@ def inputs(eval_data, data_dir, batch_size):
     highrange = 1
 
     if not eval_data:
-        lowrange = 1
-        highrange = 10000
+        lowrange_class0 = 1
+        highrange_class0 = 100000
+        lowrange_class1 = 1
+        highrange_class1 = 40000
         num_examples_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN
     else:
-        lowrange = 10001
-        highrange = 11001
+        lowrange_class0 = 10000
+        highrange_class0 = 11000
+        lowrange_class1 = 10000
+        highrange_class1 = 11000
         num_examples_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_EVAL
-
-    # positive training data
-    for i in range(lowrange, highrange):
-        filename = matfile['annotations'][i-1].relative_im_path
-        filename = filename.replace("car_ims", "")
-        filename = data_dir + filename
-        filenames1.append(filename)
-    filename_queue1 = tf.train.string_input_producer(filenames1)
-    read_input_vehicle = read_car_ims(filename_queue1, 1, eval_data)
 
     # negative training data
     del filenames[:]
-    for i in range(lowrange, highrange):
+    for i in range(lowrange_class0, highrange_class0):
         filename = data_dir + "/class0/negative" + str(i).zfill(6) + ".jpg"
         filenames.append(filename)
     filename_queue = tf.train.string_input_producer(filenames)
-    read_input_no_vehicle = read_car_ims(filename_queue, 0, eval_data)
+    read_input_no_vehicle = read_car_ims(filename_queue, 0.0, eval_data)
     
-    datalist = [(read_input_no_vehicle.floatimage, read_input_no_vehicle.label), (read_input_vehicle.floatimage, read_input_vehicle.label)] 
-    #datalist = [(read_input_vehicle.floatimage, read_input_vehicle.label), (read_input_no_vehicle.floatimage, read_input_no_vehicle.label)] 
+    # positive training data
+    for i in range(lowrange_class1, highrange_class1):
+        filename = data_dir + "/class1/" + str(i).zfill(6) + ".jpg"
+        filenames1.append(filename)
+    filename_queue1 = tf.train.string_input_producer(filenames1)
+    read_input_vehicle = read_car_ims(filename_queue1, 1.0, eval_data)
+
+    #datalist = [(read_input_no_vehicle.floatimage, read_input_no_vehicle.label), (read_input_vehicle.floatimage, read_input_vehicle.label)] 
+    datalist = [(read_input_vehicle.floatimage, read_input_vehicle.label), (read_input_no_vehicle.floatimage, read_input_no_vehicle.label)] 
 
     min_fraction_of_examples_in_queue = 0.4
     min_queue_examples = int(num_examples_per_epoch *
@@ -242,8 +254,10 @@ def read_image(file_path, y1, x1, height, width, batch_size):
     filename_queue = tf.train.string_input_producer(filenames)
     image_data = read_image_bounding_box(filename_queue, y1, x1, height, width)
 
-    temp = [image_data]
-    image_data = tf.train.batch(temp, batch_size=batch_size)
+    #temp = [image_data]
+    #image_data = tf.train.batch(temp, batch_size=batch_size)
+    image_data = tf.expand_dims(image_data, 0)
+    image_data = tf.tile(image_data, tf.pack([batch_size, 1, 1, 1]))
     print (image_data.get_shape())
 
     init = tf.initialize_all_variables()
@@ -253,7 +267,7 @@ def read_image(file_path, y1, x1, height, width, batch_size):
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         img = sess.run(image_data)
-        for i in xrange(2):
+        for i in xrange(1):
             name = os.path.join('/tmp/test', str(i) +'.jpeg')
             print(name)
             print(img[i].shape)

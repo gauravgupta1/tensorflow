@@ -31,6 +31,7 @@ def train():
 
         # Get images and labels
         images, labels = vehicledetector.prepare_data(eval_data=False)
+    
         # Build graph the computes the logits prediction
         # from the inference model
         logits = vehicledetector.inference(images)
@@ -101,5 +102,6 @@ def main(argv=None):
     tf.gfile.MakeDirs(FLAGS.train_dir)
     train()
 
+#USAGE: python vehicledetector_train.py    
 if __name__ == '__main__':
     tf.app.run()

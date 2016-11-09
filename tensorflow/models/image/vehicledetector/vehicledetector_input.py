@@ -8,6 +8,8 @@ import sys
 import tensorflow as tf
 from scipy.io import loadmat
 import scipy.misc
+import cv2
+from tile import tile
 
 IMAGE_SIZE_W = 60
 IMAGE_SIZE_H = 40
@@ -22,6 +24,24 @@ class CARIMSRecord(object):
 
 def print_tensor_info(t):
     print (str(t.name) + ": " + str(t.get_shape()) + " size:" + str(t.get_shape().ndims) + " dtype:" + str(t.dtype))
+
+def dump_batch_images(image_tensor, batch_size):
+    init = tf.initialize_all_variables()
+    sess = tf.Session()
+    with sess as sess:
+        sess.run(init)
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(coord=coord)
+        imgs = sess.run(image_tensor)
+        for i in xrange(batch_size):
+            name = os.path.join('/tmp/test', str(i) +'.jpeg')
+            #print(name)
+            #print(imgs[i].shape)
+            scipy.misc.imsave(name, imgs[i])
+        coord.request_stop()
+        coord.join(threads)
+    print('batch dumped to /tmp/test')
+
 
 def read_car_ims(filename_queue, class_label, eval_data=False):
     """Reads and parses images from car_ims image files.
@@ -119,7 +139,7 @@ def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, s
         non_vehicle_batch_size = (batch_size*3) // 4
     else:
         vehicle_batch_size = batch_size
-        non_vehicle_batch_size = batch_size // 4
+        non_vehicle_batch_size = 0
         
     images0, label_batch0 = tf.train.batch(
         data_list[0],
@@ -194,10 +214,10 @@ def inputs(eval_data, data_dir, batch_size):
         highrange_class1 = 40000
         num_examples_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN
     else:
-        lowrange_class0 = 10000
-        highrange_class0 = 11000
-        lowrange_class1 = 10000
-        highrange_class1 = 11000
+        lowrange_class0 = 79500
+        highrange_class0 = 80500
+        lowrange_class1 = 30000
+        highrange_class1 = 31000
         num_examples_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_EVAL
 
     # negative training data
@@ -206,14 +226,14 @@ def inputs(eval_data, data_dir, batch_size):
         filename = data_dir + "/class0/negative" + str(i).zfill(6) + ".jpg"
         filenames.append(filename)
     filename_queue = tf.train.string_input_producer(filenames)
-    read_input_no_vehicle = read_car_ims(filename_queue, 0.0, eval_data)
+    read_input_no_vehicle = read_car_ims(filename_queue, 0, eval_data)
     
     # positive training data
     for i in range(lowrange_class1, highrange_class1):
         filename = data_dir + "/class1/" + str(i).zfill(6) + ".jpg"
         filenames1.append(filename)
     filename_queue1 = tf.train.string_input_producer(filenames1)
-    read_input_vehicle = read_car_ims(filename_queue1, 1.0, eval_data)
+    read_input_vehicle = read_car_ims(filename_queue1, 1, eval_data)
 
     #datalist = [(read_input_no_vehicle.floatimage, read_input_no_vehicle.label), (read_input_vehicle.floatimage, read_input_vehicle.label)] 
     datalist = [(read_input_vehicle.floatimage, read_input_vehicle.label), (read_input_no_vehicle.floatimage, read_input_no_vehicle.label)] 
@@ -224,25 +244,42 @@ def inputs(eval_data, data_dir, batch_size):
 
     images, labels = _generate_image_and_label_batch(datalist, min_queue_examples, batch_size, shuffle=False, eval_data=eval_data)               
 
-    # init = tf.initialize_all_variables()
-    # sess = tf.Session()
-    # with sess as sess:
-    #     sess.run(init)
-    #     coord = tf.train.Coordinator()
-    #     threads = tf.train.start_queue_runners(coord=coord)
-    #     img, label = sess.run([images, labels])
-    #     for i in xrange(batch_size):
-    #         name = os.path.join('/tmp/test', str(i) +'.jpeg')
-    #         print(label[i])
-    #         print(name)
-    #         #print(img[i].shape)
-    #         scipy.misc.imsave(name, img[i])
-    #     coord.request_stop()
-    #     coord.join(threads)
-    # print('written')
+    dump_batch_images(images, batch_size)
 
     return images, labels
-        
+
+def read_image2(file_path, y_left, x_left, y_right, x_right, tile_height, tile_width, batch_size):
+    filenames = [file_path]
+    filename_queue = tf.train.string_input_producer(filenames)
+    reader = tf.WholeFileReader()
+    key, value = reader.read(filename_queue)
+    orig_image = tf.image.decode_jpeg(value, channels=3)
+    float_image = tf.cast(orig_image, tf.float32)
+    
+    first = True
+    for (x,y) in tile(x_left, y_left, x_right, y_right, tile_width, tile_height):
+        img_slice = tf.slice(float_image, [y,x,0], [tile_height, tile_width, 3])
+        if tile_height != IMAGE_SIZE_H or tile_width != IMAGE_SIZE_W:
+            img_slice = tf.image.resize_images(img_slice, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
+        img_slice = tf.image.per_image_whitening(img_slice)
+        img_slice = tf.expand_dims(img_slice, 0)
+        if first:
+            first = False
+            image_tensor = img_slice
+        else:
+            image_tensor = tf.concat(0, [image_tensor, img_slice])
+        if image_tensor.get_shape()[0] == batch_size:
+            break
+
+    # if less than batch_size, fill with last    
+    batch_count = image_tensor.get_shape()[0]
+    for b in xrange(batch_count, batch_size, 1):
+        image_tensor = tf.concat(0, [image_tensor, img_slice])
+
+    dump_batch_images(image_tensor, batch_size)
+    
+    return image_tensor
+    
 def read_image(file_path, y1, x1, height, width, batch_size):
 
     """ 
@@ -260,19 +297,6 @@ def read_image(file_path, y1, x1, height, width, batch_size):
     image_data = tf.tile(image_data, tf.pack([batch_size, 1, 1, 1]))
     print (image_data.get_shape())
 
-    init = tf.initialize_all_variables()
-    sess = tf.Session()
-    with sess as sess:
-        sess.run(init)
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord)
-        img = sess.run(image_data)
-        for i in xrange(1):
-            name = os.path.join('/tmp/test', str(i) +'.jpeg')
-            print(name)
-            print(img[i].shape)
-            scipy.misc.imsave(name, img[i])
-        coord.request_stop()
-        coord.join(threads)
-    print('written')
+    dump_batch_images(image_data, batch_size)
+
     return image_data

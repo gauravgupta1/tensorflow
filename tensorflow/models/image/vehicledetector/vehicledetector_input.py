@@ -248,16 +248,19 @@ def inputs(eval_data, data_dir, batch_size):
 
     return images, labels
 
-def read_image2(file_path, y_left, x_left, y_right, x_right, tile_height, tile_width, batch_size):
-    filenames = [file_path]
-    filename_queue = tf.train.string_input_producer(filenames)
-    reader = tf.WholeFileReader()
-    key, value = reader.read(filename_queue)
-    orig_image = tf.image.decode_jpeg(value, channels=3)
+def image2tensor(cv_img, x_left, y_left, x_right, y_right, tile_width, tile_height, batch_size):
+    orig_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
     float_image = tf.cast(orig_image, tf.float32)
-    
+    image_height = orig_image.shape[0]
+    image_width = orig_image.shape[1]
+
+    #print(x_left, y_left, x_right, y_right, image_width, image_height)
     first = True
     for (x,y) in tile(x_left, y_left, x_right, y_right, tile_width, tile_height):
+        if y+tile_height > image_height or x+tile_width > image_width:
+            continue
+        
+        #print (x,y,float_image.get_shape())
         img_slice = tf.slice(float_image, [y,x,0], [tile_height, tile_width, 3])
         if tile_height != IMAGE_SIZE_H or tile_width != IMAGE_SIZE_W:
             img_slice = tf.image.resize_images(img_slice, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
@@ -270,14 +273,14 @@ def read_image2(file_path, y_left, x_left, y_right, x_right, tile_height, tile_w
             image_tensor = tf.concat(0, [image_tensor, img_slice])
         if image_tensor.get_shape()[0] == batch_size:
             break
-
+        
     # if less than batch_size, fill with last    
     batch_count = image_tensor.get_shape()[0]
     for b in xrange(batch_count, batch_size, 1):
         image_tensor = tf.concat(0, [image_tensor, img_slice])
 
-    dump_batch_images(image_tensor, batch_size)
-    
+    #dump_batch_images(image_tensor, batch_size)
+
     return image_tensor
     
 def read_image(file_path, y1, x1, height, width, batch_size):

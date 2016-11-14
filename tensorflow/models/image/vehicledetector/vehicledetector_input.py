@@ -10,6 +10,7 @@ from scipy.io import loadmat
 import scipy.misc
 import cv2
 from tile import tile
+import time
 
 IMAGE_SIZE_W = 60
 IMAGE_SIZE_H = 40
@@ -254,6 +255,7 @@ def image2tensor(cv_img, x_left, y_left, x_right, y_right, tile_width, tile_heig
     image_height = orig_image.shape[0]
     image_width = orig_image.shape[1]
 
+    start_time = time.time()
     #print(x_left, y_left, x_right, y_right, image_width, image_height)
     first = True
     for (x,y) in tile(x_left, y_left, x_right, y_right, tile_width, tile_height):
@@ -278,7 +280,9 @@ def image2tensor(cv_img, x_left, y_left, x_right, y_right, tile_width, tile_heig
     batch_count = image_tensor.get_shape()[0]
     for b in xrange(batch_count, batch_size, 1):
         image_tensor = tf.concat(0, [image_tensor, img_slice])
-
+        
+    end_time = time.time()
+    #print("image2tensor:time:%d"%(end_time-start_time))
     #dump_batch_images(image_tensor, batch_size)
 
     return image_tensor

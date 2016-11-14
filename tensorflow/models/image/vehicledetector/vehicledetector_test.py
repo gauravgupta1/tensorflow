@@ -13,6 +13,7 @@ import vehicledetector_input
 from tile import tile
 from startposition import startposition
 from pyramid import pyramid
+import time
 
 import cv2
 
@@ -63,7 +64,10 @@ def test_algo_tile_scan(cv_img, start_left_x, start_left_y, right_x, right_y, ti
     imgh,imgw = cv_img.shape[:2]
     for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride):
         #print("left_x:%d,left_y%d"%(left_x,left_y))
+        start_time = time.time()
         retval = evaluate(eval_img, left_x, left_y, right_x, right_y, tile_w, tile_h, batch_size=128)
+        end_time = time.time()
+        print("evaluate:time:%d"%(end_time-start_time))
         #cv_img = cv2.imread(file_path)
 
         index = 0
@@ -123,9 +127,12 @@ def main(argv):
     
     #test_algo_tile_scan(cv_img, start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride)
 
+    start_time = time.time()
     retval = test_algo_sliding_window(cv_img, left_lane_percent, right_lane_percent, horizon_percent, car_dash_percent, tile_w, tile_h, stride)
     for (x,y) in retval:
         cv2.rectangle(cv_img, (x, y), (x+tile_w, y+tile_h), (0,255,0), 1)
+    end_time = time.time()
+    print("Total:time:%d"%(end_time-start_time))
 
     cv2.imshow("finaloutput", cv_img)
     cv2.waitKey(0)

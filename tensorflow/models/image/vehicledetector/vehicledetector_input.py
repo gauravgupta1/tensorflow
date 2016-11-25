@@ -10,7 +10,12 @@ from scipy.io import loadmat
 import scipy.misc
 import cv2
 from tile import tile
+from startposition import startposition
 import time
+import threading
+import concurrent.futures
+import Queue
+from multiprocessing.pool import ThreadPool
 
 IMAGE_SIZE_W = 60
 IMAGE_SIZE_H = 40
@@ -249,43 +254,125 @@ def inputs(eval_data, data_dir, batch_size):
 
     return images, labels
 
-def image2tensor(cv_img, x_left, y_left, x_right, y_right, tile_width, tile_height, batch_size):
+def tile_image(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height):
+    print("tile_image:tid:", threading.current_thread().ident)
+    with graph.as_default():
+        first_tile = True
+
+        for (x,y) in tile(left_x, left_y, right_x, right_y, tile_width, tile_height):
+            if y+tile_height > image_height or x+tile_width > image_width:
+                continue
+        
+            #print (x,y,float_image.get_shape())
+            img_slice = tf.slice(float_image, [y,x,0], [tile_height, tile_width, 3])
+            if tile_height != IMAGE_SIZE_H or tile_width != IMAGE_SIZE_W:
+                img_slice = tf.image.resize_images(img_slice, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
+            img_slice = tf.image.per_image_whitening(img_slice)
+            img_slice = tf.expand_dims(img_slice, 0)
+            if first_tile:
+                first_tile = False
+                image_tensor = img_slice
+                x_tensor = tf.fill([1], x)
+                y_tensor = tf.fill([1], y)
+            else:
+                image_tensor = tf.concat(0, [image_tensor, img_slice])
+                x_tensor = tf.concat(0,[x_tensor, tf.fill([1], x)])
+                y_tensor = tf.concat(0,[y_tensor, tf.fill([1], y)])
+                
+        q.put((image_tensor, x_tensor, y_tensor))
+        return (image_tensor, x_tensor, y_tensor)
+
+def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride, batch_size):
+
     orig_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
     float_image = tf.cast(orig_image, tf.float32)
     image_height = orig_image.shape[0]
     image_width = orig_image.shape[1]
+    t_list = []
+    total_tile_count = 0
+    
+    begin_time = time.time()
+    list_lock = threading.Lock()
+    jobs = []
+    q = Queue.Queue()
+    pool = ThreadPool(processes=10)
 
-    start_time = time.time()
-    #print(x_left, y_left, x_right, y_right, image_width, image_height)
-    first = True
-    for (x,y) in tile(x_left, y_left, x_right, y_right, tile_width, tile_height):
-        if y+tile_height > image_height or x+tile_width > image_width:
-            continue
+    for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+        async_result = pool.apply_async(tile_image, (q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+        jobs.append(async_result)
         
-        #print (x,y,float_image.get_shape())
-        img_slice = tf.slice(float_image, [y,x,0], [tile_height, tile_width, 3])
-        if tile_height != IMAGE_SIZE_H or tile_width != IMAGE_SIZE_W:
-            img_slice = tf.image.resize_images(img_slice, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
-        img_slice = tf.image.per_image_whitening(img_slice)
-        img_slice = tf.expand_dims(img_slice, 0)
-        if first:
-            first = False
-            image_tensor = img_slice
-        else:
-            image_tensor = tf.concat(0, [image_tensor, img_slice])
-        if image_tensor.get_shape()[0] == batch_size:
-            break
+    for t in jobs:
+        (x, y, z) = t.get()
+        t_list.append((x,y,z))
+        total_tile_count += x.get_shape()[0].value
+        print("total_tile_count:",total_tile_count)
         
+    # threading.thread
+    # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+    #     t = threading.Thread(target=tile_image, args=(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+    #     jobs.append(t)
+    #     t.daemon = True
+    #     t.start()
+
+    # for t in jobs:
+    #     t.join()
+
+    # while not q.empty():
+    #     (x, y, z) = q.get()
+    #     t_list.append((x,y,z))
+    #     total_tile_count += x.get_shape()[0].value
+        
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    #     for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+    #         jobs.append(executor.submit(tile_image, q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+            
+    #     try:
+    #         for future in concurrent.futures.as_completed(jobs):
+    #             #list_lock.acquire()
+    #             (x,y,z) = future.result()
+    #             t_list.append((x,y,z))
+    #             total_tile_count += x.get_shape()[0].value
+    #             print("total_tile_count:",total_tile_count)
+    #             #list_lock.release()
+    #     except Exception as e:
+    #         print("Exception:%s" % (e))
+
+    # All sequential - fresh reboot (43 secs)
+    # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+    #     (x, y, z) = tile_image(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height)
+            
+    #     t_list.append((x,y,z))
+    #     total_tile_count += x.get_shape()[0].value
+    #     print("total_tile_count:",total_tile_count)
+            
+            
     # if less than batch_size, fill with last    
-    batch_count = image_tensor.get_shape()[0]
-    for b in xrange(batch_count, batch_size, 1):
-        image_tensor = tf.concat(0, [image_tensor, img_slice])
-        
-    end_time = time.time()
-    #print("image2tensor:time:%d"%(end_time-start_time))
-    #dump_batch_images(image_tensor, batch_size)
+    # batch_count = image_tensor.get_shape()[0]
+    # batch_count = len(t_list)
+    # filler_count = batch_size - (batch_count%batch_size)
+    # print(filler_count)
+    # for b in xrange(0, filler_count, 1):
+    #     #image_tensor = tf.concat(0, [image_tensor, img_slice])
+    #     t_list[len(t_list)-1].append((img_slice,tf.fill([1],x),tf.fill([1]
+                                                                       # ,y)))
 
-    return image_tensor
+    end_time = time.time()
+    print("tiling-delay:%d"%(end_time-begin_time))
+    
+    print("len(t_list)", len(t_list))
+
+    begin_time = time.time()
+    retval,x,y = tf.train.batch_join(t_list, batch_size=batch_size, enqueue_many=True)
+    end_time = time.time()
+    print("batching-delay:%d"%(end_time-begin_time))
+
+    #print(len(retval))
+    #print_tensor_info(retval)
+    dump_batch_images(retval, batch_size)
+    #print_tensor_info(x)
+    steps = total_tile_count // batch_size
+    
+    return retval,x,y,steps
     
 def read_image(file_path, y1, x1, height, width, batch_size):
 

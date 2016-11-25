@@ -5,6 +5,7 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
+import time
 import numpy as np
 import tensorflow as tf
 
@@ -24,14 +25,14 @@ tf.app.flags.DEFINE_string('checkpoint_dir', '/home/gauravgupta/workspace/mytens
 
 tf.app.flags.DEFINE_string('num_examples', 1, """Number of examples to run""")
 
-def evaluate(cv_img, left_x, left_y, right_x, right_y, tile_h, tile_w, batch_size):
+def evaluate(cv_img, start_left_x, start_left_y, right_x, right_y, tile_h, tile_w, stride, batch_size):
 
     with tf.Graph().as_default() as g:
         #image = vehicledetector_input.read_image(file_path, left_y, left_x, h, w, FLAGS.batch_size)
 
-        image = vehicledetector_input.image2tensor(cv_img, left_x, left_y, right_x, right_y, tile_w, tile_h, batch_size)
+        images,x,y,steps = vehicledetector_input.image2tensor(g, cv_img, start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride, batch_size)
         
-        logits = vehicledetector.inference(image)
+        logits = vehicledetector.inference(images)
         _, top_k_pred = tf.nn.top_k(logits, k=1)
 
         variable_averages = tf.train.ExponentialMovingAverage(vehicledetector.MOVING_AVERAGE_DECAY)
@@ -41,6 +42,7 @@ def evaluate(cv_img, left_x, left_y, right_x, right_y, tile_h, tile_w, batch_siz
         with tf.Session() as sess:
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
             if ckpt and ckpt.model_checkpoint_path:
+                print(ckpt.model_checkpoint_path)
                 saver.restore(sess, ckpt.model_checkpoint_path)
                 global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
             else:
@@ -49,40 +51,56 @@ def evaluate(cv_img, left_x, left_y, right_x, right_y, tile_h, tile_w, batch_siz
 
             # start the queue runners.
             coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(coord=coord)
-            logi, pred = sess.run([logits, top_k_pred])
-            #print(logi)    
-            #print ("answer=" + str(pred))
+            try:
+                threads = []
+                for qr in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
+                    threads.extend(qr.create_threads(sess, coord=coord, daemon=True, start=True))
+                    if len(threads) >= 16:
+                        break
+                    
+                #threads = tf.train.start_queue_runners(coord=coord)
+                print("len(threads)",len(threads))
+                detected_cars = {}
+                for step in xrange(0,steps):
+                    x1, y1, logi, pred = sess.run([x, y, logits, top_k_pred])
+                    for index in xrange(0,len(pred)):
+                        if pred[index] == 1:
+                            detected_cars[x1[index]] = y1[index]
+                            print (step, x1[index], y1[index])
+            except Exception as e:
+                coord.request_stop(e)
+                
             coord.request_stop()
             coord.join(threads, stop_grace_period_secs=10)
 
-            return pred
+            return detected_cars
 
 def test_algo_tile_scan(cv_img, start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride):
-    detected_cars = []
+    detected_cars = {}
     eval_img = cv_img.copy()
-    imgh,imgw = cv_img.shape[:2]
-    for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride):
+    retval = evaluate(eval_img, start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride, batch_size=128)
         #print("left_x:%d,left_y%d"%(left_x,left_y))
-        start_time = time.time()
-        retval = evaluate(eval_img, left_x, left_y, right_x, right_y, tile_w, tile_h, batch_size=128)
-        end_time = time.time()
-        print("evaluate:time:%d"%(end_time-start_time))
+        #start_time = time.time()
+        #retval = evaluate(eval_img, left_x, left_y, right_x, right_y, tile_w, tile_h, batch_size=128)
+        #end_time = time.time()
+        #print("evaluate:time:%d"%(end_time-start_time))
         #cv_img = cv2.imread(file_path)
 
-        index = 0
-        for (x,y) in tile(left_x, left_y, right_x, right_y, tile_w, tile_h):
-            if index >= 128:
-                continue
-            if retval[index] == 1:
-                print('found')
-                cv2.rectangle(cv_img, (x, y), (x+tile_w, y+tile_h), (0,255,0), 1)
-                detected_cars.append([x,y])
-            #else:
-            #    cv2.rectangle(cv_img, (x, y), (x+tile_w, y+tile_h), (0,0,255), 1)
-            cv2.imshow("output", cv_img)
-            cv2.waitKey(1)
-            index = index+1
+    len(retval)
+    detected_cars.update(retval)
+        # index = 0
+        # for (x,y) in tile(left_x, left_y, right_x, right_y, tile_w, tile_h):
+        #     if index >= 128:
+        #         continue
+        #     if retval[index] == 1:
+        #         print('found')
+        #         cv2.rectangle(cv_img, (x, y), (x+tile_w, y+tile_h), (0,255,0), 1)
+        #         detected_cars.append([x,y])
+        #     #else:
+        #     #    cv2.rectangle(cv_img, (x, y), (x+tile_w, y+tile_h), (0,0,255), 1)
+        #     cv2.imshow("output", cv_img)
+        #     cv2.waitKey(1)
+        #     index = index+1
 
     return detected_cars
 
@@ -101,7 +119,9 @@ def test_algo_sliding_window(cv_img, left_lane_percent, right_lane_percent, hori
     for resized,scale in pyramid(crop_img, scale_factor):
         print("resized",resized.shape[1], resized.shape[0])
         detected_cars = test_algo_tile_scan(resized, 0, 0, resized.shape[1], resized.shape[0], tile_w, tile_h, stride)
-        for (x,y) in detected_cars:
+        print(len(detected_cars))
+        for x in detected_cars:
+            y = detected_cars[x]
             retval.append([x_left+int(x/scale), y_top+int(y/scale)])
             
     return retval
@@ -134,6 +154,8 @@ def main(argv):
     end_time = time.time()
     print("Total:time:%d"%(end_time-start_time))
 
+    end_time = time.time()
+    print("Timetaken: %dsec"%(end_time-start_time))
     cv2.imshow("finaloutput", cv_img)
     cv2.waitKey(0)
     cv2.imwrite("testoutput.jpg", cv_img)

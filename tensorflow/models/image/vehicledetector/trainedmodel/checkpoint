@@ -1,4 +1,4 @@
-model_checkpoint_path: "/home/gauravgupta/workspace/mytensorflow/tensorflow/tensorflow/models/image/vehicledetector/trainedmodel/model.ckpt-84000"
+model_checkpoint_path: "/home/gaurav/workspace/tensorflow/tensorflow/models/image/vehicledetector/trainedmodel/model.ckpt-84000"
 all_model_checkpoint_paths: "/tmp/vehicledetector_train/model.ckpt-48000"
 all_model_checkpoint_paths: "/tmp/vehicledetector_train/model.ckpt-49000"
 all_model_checkpoint_paths: "/tmp/vehicledetector_train/model.ckpt-50000"

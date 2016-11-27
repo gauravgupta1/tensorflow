@@ -11,6 +11,7 @@ import signal
 
 import tensorflow as tf
 import vehicledetector
+import vehicledetector_input
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -21,6 +22,11 @@ tf.app.flags.DEFINE_integer('max_steps', 1000000,
                            """Number of batches to run. """)
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             """Whether to log device placement.""")
+
+IMAGE_SIZE_W = vehicledetector_input.IMAGE_SIZE_W
+
+IMAGE_SIZE_H = vehicledetector_input.IMAGE_SIZE_H
+
 _should_exit = False
 
 def train():
@@ -30,14 +36,17 @@ def train():
         global_step = tf.Variable(0, trainable=False)
 
         # Get images and labels
-        images, labels = vehicledetector.prepare_data(eval_data=False)
+        images_tensor, labels_tensor = vehicledetector.prepare_data(eval_data=False)
+        
+        placeholder_images = vehicledetector.placeholder_for_data(tf.float32, (FLAGS.batch_size, IMAGE_SIZE_H, IMAGE_SIZE_W, 3))
+        placeholder_labels = vehicledetector.placeholder_for_data(tf.int64, (FLAGS.batch_size))
     
         # Build graph the computes the logits prediction
         # from the inference model
-        logits = vehicledetector.inference(images)
+        logits = vehicledetector.inference(placeholder_images)
 
         # Calculate loss (cost function).
-        loss = vehicledetector.loss(logits, labels)
+        loss = vehicledetector.loss(logits, placeholder_labels)
 
         ## Build a Graph that trains the model with one
         ## batch of examples and updates the model parameters.
@@ -66,8 +75,13 @@ def train():
             if _should_exit == True:
                 break
             
+            images, labels = sess.run([images_tensor, labels_tensor])
+            #print(images.shape, labels.shape)
+            #print(placeholder_images.get_shape(), placeholder_labels.get_shape())
+            feed_dict = {placeholder_images: images, placeholder_labels: labels}
+            
             start_time = time.time()
-            _, loss_value = sess.run([train_op, loss])
+            _, loss_value = sess.run([train_op, loss], feed_dict=feed_dict)
             duration = time.time() - start_time
 
             if loss_value > 100:
@@ -83,7 +97,7 @@ def train():
                 print (format_str % (datetime.now(), step, loss_value, examples_per_sec, sec_per_batch))
 
             if step % 100 == 0:
-                summary_str = sess.run(summary_op)
+                summary_str = sess.run(summary_op, feed_dict=feed_dict)
                 summary_writer.add_summary(summary_str, step)
 
             if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:

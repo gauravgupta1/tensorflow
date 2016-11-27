@@ -35,7 +35,7 @@ FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer('batch_size', 128,
                             """Number of images to process in a batch""")
-tf.app.flags.DEFINE_string('data_dir', '/home/gauravgupta/workspace/car_ims',
+tf.app.flags.DEFINE_string('data_dir', '/home/gaurav/workspace/car_ims',
                            """Path to the car images""")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
@@ -55,6 +55,10 @@ INITIAL_LEARNING_RATE = 0.1
 TOWER_NAME = 'tower'
 DATA_SRC_DIR = '/home/gauravgupta/workspace/car_ims'
 
+def placeholder_for_data(datatype, shape):
+    var = tf.placeholder(datatype, shape=shape)
+    return var
+
 def _activation_summary(x):
     """Helper to create summaries for activations.
     
@@ -69,7 +73,7 @@ def _activation_summary(x):
     tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
     tf.histogram_summary(tensor_name + '/activations', x)
     tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
-    
+
 def _variable_on_cpu(name, shape, initializer):
     """Helper to create a Variable stored on CPU memory.
     
@@ -155,7 +159,7 @@ def inputs(eval_data):
     return images, labels
     
     
-def inference(images):
+def inference(placeholder_images):
     """Build the VEHICLEDETECTOR model.
     
     Args:
@@ -173,12 +177,14 @@ def inference(images):
     # tf.Variable()
 
     # conv1
+    print(placeholder_images.get_shape());
+    #placeholder_images = tf.image.per_image_whitening(placeholder_images)
     with tf.variable_scope('conv1') as scope:
         kernel = _variable_with_weight_decay('weights',
                                              shape=[5, 5, 3, 64],
                                              stddev=5e-2,
                                              wd=0.0)
-        conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
+        conv = tf.nn.conv2d(placeholder_images, kernel, [1, 1, 1, 1], padding='SAME')
         biases = _variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
         bias = tf.nn.bias_add(conv, biases)
         conv1 = tf.nn.relu(bias, name=scope.name)
@@ -234,7 +240,7 @@ def inference(images):
 
     return softmax_linear
 
-def loss(logits, labels):
+def loss(logits, placeholder_labels):
     """Add L2Loss to all the trainable variables.
 
     Add summary for "Loss" and "Loss/avg".
@@ -246,8 +252,8 @@ def loss(logits, labels):
       Loss tensor of type float.
     """
     # calculate average cross entropy loss across the batch.
-    labels = tf.cast(labels, tf.int64)
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='cross_entropy_per_example')
+    #placeholder_labels = tf.cast(placeholder_labels, tf.int64)
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, placeholder_labels, name='cross_entropy_per_example')
     cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
     tf.add_to_collection('losses', cross_entropy_mean)
 

@@ -39,10 +39,10 @@ def dump_batch_images(image_tensor, batch_size):
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         imgs = sess.run(image_tensor)
+        print(imgs.shape)
         for i in xrange(batch_size):
             name = os.path.join('/tmp/test', str(i) +'.jpeg')
             #print(name)
-            #print(imgs[i].shape)
             scipy.misc.imsave(name, imgs[i])
         coord.request_stop()
         coord.join(threads)
@@ -176,7 +176,7 @@ def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, s
         label_batch = tf.random_shuffle(label_batch)
 
     print(images.get_shape())
-    tf.image_summary('images', images)
+    #tf.image_summary('images', images)
 
     return images, tf.reshape(label_batch, [batch_size])
         
@@ -297,15 +297,15 @@ def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, ti
     q = Queue.Queue()
     pool = ThreadPool(processes=10)
 
-    for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
-        async_result = pool.apply_async(tile_image, (q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
-        jobs.append(async_result)
+    # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+    #     async_result = pool.apply_async(tile_image, (q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+    #     jobs.append(async_result)
         
-    for t in jobs:
-        (x, y, z) = t.get()
-        t_list.append((x,y,z))
-        total_tile_count += x.get_shape()[0].value
-        print("total_tile_count:",total_tile_count)
+    # for t in jobs:
+    #     (x, y, z) = t.get()
+    #     t_list.append((x,y,z))
+    #     total_tile_count += x.get_shape()[0].value
+    #     print("total_tile_count:",total_tile_count)
         
     # threading.thread
     # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
@@ -338,23 +338,22 @@ def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, ti
     #         print("Exception:%s" % (e))
 
     # All sequential - fresh reboot (43 secs)
-    # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
-    #     (x, y, z) = tile_image(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height)
+    for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+        (x, y, z) = tile_image(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height)
             
-    #     t_list.append((x,y,z))
-    #     total_tile_count += x.get_shape()[0].value
-    #     print("total_tile_count:",total_tile_count)
+        t_list.append((x,y,z))
+        total_tile_count += x.get_shape()[0].value
+        print("total_tile_count:",total_tile_count)
             
             
-    # if less than batch_size, fill with last    
+    #if less than batch_size, fill with last    
     # batch_count = image_tensor.get_shape()[0]
     # batch_count = len(t_list)
     # filler_count = batch_size - (batch_count%batch_size)
     # print(filler_count)
     # for b in xrange(0, filler_count, 1):
     #     #image_tensor = tf.concat(0, [image_tensor, img_slice])
-    #     t_list[len(t_list)-1].append((img_slice,tf.fill([1],x),tf.fill([1]
-                                                                       # ,y)))
+    #     t_list[len(t_list)-1].append((img_slice,tf.fill([1],x),tf.fill([1] ,y)))
 
     end_time = time.time()
     print("tiling-delay:%d"%(end_time-begin_time))

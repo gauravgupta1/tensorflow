@@ -1,3 +1,4 @@
+#**********************************************************
 """ Build vehicledetector network.
 
 Summary of availabe functions:
@@ -20,6 +21,8 @@ Summary of availabe functions:
 
 """
 
+#**********************************************************
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -30,6 +33,8 @@ import re
 import tensorflow as tf
 
 import vehicledetector_input
+
+#**********************************************************
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -53,11 +58,14 @@ LEARNING_RATE_DECAY_FACTOR = 0.1
 INITIAL_LEARNING_RATE = 0.1
 
 TOWER_NAME = 'tower'
-DATA_SRC_DIR = '/home/gauravgupta/workspace/car_ims'
+
+#**********************************************************
 
 def placeholder_for_data(datatype, shape):
     var = tf.placeholder(datatype, shape=shape)
     return var
+
+#**********************************************************
 
 def _activation_summary(x):
     """Helper to create summaries for activations.
@@ -74,6 +82,8 @@ def _activation_summary(x):
     tf.histogram_summary(tensor_name + '/activations', x)
     tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
+#**********************************************************
+
 def _variable_on_cpu(name, shape, initializer):
     """Helper to create a Variable stored on CPU memory.
     
@@ -89,6 +99,8 @@ def _variable_on_cpu(name, shape, initializer):
         dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
         var = tf.get_variable(name, shape, initializer=initializer, dtype=dtype)
     return var
+
+#**********************************************************
 
 def _variable_with_weight_decay(name, shape, stddev, wd):
     """Helper to create an initialized Variable with weight decay.
@@ -115,6 +127,8 @@ def _variable_with_weight_decay(name, shape, stddev, wd):
         tf.add_to_collection('losses', weight_decay)
     return var
 
+#**********************************************************
+
 def distorted_inputs():
     """ Construct distorted input for car_ims
     
@@ -134,6 +148,8 @@ def distorted_inputs():
         images = tf.cast(images, tf.float16)
         labels = tf.cast(labels, tf.float16)
     return images, labels
+
+#**********************************************************
 
 def inputs(eval_data):
     """Construct input for VEHICLEDETECTOR using the Reader ops.
@@ -158,6 +174,7 @@ def inputs(eval_data):
 
     return images, labels
     
+#**********************************************************
     
 def inference(placeholder_images):
     """Build the VEHICLEDETECTOR model.
@@ -240,6 +257,8 @@ def inference(placeholder_images):
 
     return softmax_linear
 
+#**********************************************************
+
 def loss(logits, placeholder_labels):
     """Add L2Loss to all the trainable variables.
 
@@ -258,6 +277,8 @@ def loss(logits, placeholder_labels):
     tf.add_to_collection('losses', cross_entropy_mean)
 
     return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+#**********************************************************
 
 def _add_loss_summaries(total_loss):
     """Add summaries for losses in VEHICLEDETECTOR model.
@@ -280,6 +301,8 @@ def _add_loss_summaries(total_loss):
         tf.scalar_summary(l.op.name, loss_averages.average(l))
 
     return loss_averages_op
+
+#**********************************************************
 
 def train(total_loss, global_step):
     """Train VEHICLEDETECTOR model.
@@ -327,6 +350,10 @@ def train(total_loss, global_step):
 
     return train_op
     
+#**********************************************************
+
 def prepare_data(eval_data):
     """From input data, resize, re-name, re-label, dataset """
     return inputs(eval_data)
+
+#**********************************************************

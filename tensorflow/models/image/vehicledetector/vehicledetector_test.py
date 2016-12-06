@@ -1,37 +1,43 @@
+#**********************************************************
 ####
 #### Usage: python vehicledetector_test.py <input_file> <left_lane_percent> <right_lane_percent> <horizon_percent> <car_dash_percent> <tile_width> <tile_height> <stride>
 ####
+#**********************************************************
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import sys
 import time
+from multiprocessing import Process, Queue, Pool
+
 import numpy as np
 import tensorflow as tf
+import cv2
 
 import vehicledetector
 import vehicledetector_input
 from tile import tile
 from startposition import startposition
 from pyramid import pyramid
-import time
 
-from multiprocessing import Process, Queue, Pool
-
-import cv2
+#**********************************************************
 
 IMAGE_SIZE_W = vehicledetector_input.IMAGE_SIZE_W
 IMAGE_SIZE_H = vehicledetector_input.IMAGE_SIZE_H
 FLAGS = tf.app.flags.FLAGS
 
-#tf.app.flags.DEFINE_string('checkpoint_dir', '/tmp/vehicledetector_train', """Directory where model is saved""")
-tf.app.flags.DEFINE_string('checkpoint_dir', '/home/gaurav/workspace/tensorflow/tensorflow/models/image/vehicledetector/trainedmodel', """Directory where model is saved""")
+tf.app.flags.DEFINE_string('checkpoint_dir', '/tmp/vehicledetector_train', """Directory where model is saved""")
+#tf.app.flags.DEFINE_string('checkpoint_dir', '/home/gaurav/workspace/tensorflow/tensorflow/models/image/vehicledetector/trainedmodel', """Directory where model is saved""")
 
 tf.app.flags.DEFINE_string('num_examples', 1, """Number of examples to run""")
 
+#**********************************************************
+
 def get_time_in_ms():
     return int(round(time.time()*1000))
+
+#**********************************************************
 
 def evaluate(cv_img, start_left_x, start_left_y, right_x, right_y, tile_h, tile_w, stride, batch_size):
 
@@ -49,8 +55,8 @@ def evaluate(cv_img, start_left_x, start_left_y, right_x, right_y, tile_h, tile_
         with tf.Session() as sess:
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
             if ckpt and ckpt.model_checkpoint_path:
-                print(ckpt.model_checkpoint_path)
-                saver.restore(sess, ckpt.model_checkpoint_path)
+                #print(ckpt.model_checkpoint_path)
+                saver.restore(sess, tf.train.latest_checkpoint(FLAGS.checkpoint_dir))
                 global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
             else:
                 print('No checkpoint file found')
@@ -82,6 +88,8 @@ def evaluate(cv_img, start_left_x, start_left_y, right_x, right_y, tile_h, tile_
 
             return detected_cars
 
+#**********************************************************
+
 def evaluate2(cv_image_list, x_list, y_list, batch_size):
 
     with tf.Graph().as_default() as g:
@@ -95,18 +103,20 @@ def evaluate2(cv_image_list, x_list, y_list, batch_size):
         variables_to_restore = variable_averages.variables_to_restore()
         saver = tf.train.Saver(variables_to_restore)
 
+        ## parallel version
         # image_queue = tf.train.input_producer(cv_image_list, element_shape=[40, 60, 3])
         # x_queue = tf.train.input_producer(x_list)
         # y_queue = tf.train.input_producer(y_list)
+        
         steps = len(cv_image_list) // batch_size
 
-        #config = tf.ConfigProto(device_count = {'GPU': 0})
-        #with tf.Session(config=config) as sess:
-        with tf.Session() as sess:
+        config = tf.ConfigProto(device_count = {'GPU': 0})
+        with tf.Session(config=config) as sess:
+        #with tf.Session() as sess:
             ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
             if ckpt and ckpt.model_checkpoint_path:
-                print('loading ckpt model from:',ckpt.model_checkpoint_path)
-                saver.restore(sess, ckpt.model_checkpoint_path)
+                print('Loading ckpt model from:', tf.train.latest_checkpoint(FLAGS.checkpoint_dir))
+                saver.restore(sess, tf.train.latest_checkpoint(FLAGS.checkpoint_dir))
                 global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
             else:
                 print('No checkpoint file found')
@@ -118,10 +128,11 @@ def evaluate2(cv_image_list, x_list, y_list, batch_size):
             try:
                 threads = []
                 threads = tf.train.start_queue_runners(coord=coord)
-                print("len(threads)",len(threads))
+                #print("len(threads)",len(threads))
 
                 start_time = get_time_in_ms()
 
+                ## Parallel version
                 # for step in xrange(0, steps):
                 #     image_batch_t = image_queue.dequeue_many(batch_size)
                 #     x_batch_t = x_queue.dequeue_many(batch_size)
@@ -167,6 +178,8 @@ def tile_process(cv_img, left_x, left_y, right_x, right_y, tile_w, tile_h):
 
     return retval_images
 
+#**********************************************************
+
 def per_image_whitening(cv_img):
     num_pixels = cv_img.shape[0] * cv_img.shape[1]
     image_mean = np.average(cv_img)
@@ -185,12 +198,14 @@ def per_image_whitening(cv_img):
 
     return cv_img
     
+#**********************************************************
+
 def test_algo_tile_scan(cv_img, start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride):
     detected_cars = {}
     eval_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
     eval_img = eval_img.astype('float32')
     #eval_img = per_image_whitening(eval_img)
-    print(eval_img.dtype)
+    #print(eval_img.dtype)
     
     #detected_cars = evaluate(eval_img, start_left_x, start_left_y, right_x, right_y, tile_w, tile_h, stride, batch_size=128)
     #len(detected_cars)
@@ -230,30 +245,34 @@ def test_algo_tile_scan(cv_img, start_left_x, start_left_y, right_x, right_y, ti
 
     end_time = get_time_in_ms()
     print("tiling_process:time:%dms"%(end_time-start_time))
-    print("cv_img_list:", len(cv_img_list), len(x), len(y))
+    #print("cv_img_list:", len(cv_img_list), len(x), len(y))
     detected_cars = evaluate2(cv_img_list, x, y, batch_size=128)
 
     return detected_cars
 
+#**********************************************************
+
 def test_algo_sliding_window(cv_img, left_lane_percent, right_lane_percent, horizon_percent, car_dash_percent, tile_w, tile_h, stride):
-    print("cv_img", cv_img.shape[1], cv_img.shape[0])
+    print("Original Image:", cv_img.shape[1], cv_img.shape[0])
     y_top = (cv_img.shape[0] * horizon_percent) // 100
     y_bottom = (cv_img.shape[0] * car_dash_percent) // 100
     x_left = (cv_img.shape[1] * left_lane_percent) // 100
     x_right = (cv_img.shape[1] * right_lane_percent) // 100
-    print("crop_dimensions:", y_top, y_bottom, x_left, x_right)
+    print("Cropped Image:", y_top, y_bottom, x_left, x_right)
     crop_img = cv_img[y_top:y_bottom, x_left:x_right]
     scale_factor = 2
     retval = []
     
     for resized, scale in pyramid(crop_img, scale_factor):
-        print("resized-image-shape:",resized.shape[1], resized.shape[0])
+        #print("resized-image-shape:",resized.shape[1], resized.shape[0])
         detected_cars = test_algo_tile_scan(resized, 0, 0, resized.shape[1], resized.shape[0], tile_w, tile_h, stride)
         for x in detected_cars:
             y = detected_cars[x]
             retval.append([x_left+int(x/scale), y_top+int(y/scale)])
             
     return retval
+
+#**********************************************************
 
 def main(argv):
     if len(argv) < 9:
@@ -265,7 +284,7 @@ def main(argv):
     print ("vehicledetector_test: input file path:" + file_path)
     
     if not tf.gfile.Exists(file_path):
-        print("File does not exist!")
+        print("File does not exist!", file_path)
         exit(0)
     left_lane_percent = int(argv[2])
     right_lane_percent = int(argv[3])
@@ -293,7 +312,10 @@ def main(argv):
     cv2.waitKey(0)
     cv2.imwrite("testoutput.jpg", cv_img)
     
+#**********************************************************
+
 if __name__ == '__main__':
     # missed ATD
     tf.app.run()
     
+#**********************************************************

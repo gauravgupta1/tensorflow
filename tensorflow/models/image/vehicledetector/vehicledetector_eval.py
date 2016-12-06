@@ -1,3 +1,4 @@
+#**********************************************************
 """ Evaluation of vehicledetector
 
 Accurary:
@@ -43,10 +44,13 @@ def eval_once(saver, summary_writer, logits, top_k_op, summary_op):
       top_k_op: Top L op.
       summary_op: Summary op.
     """
-    with tf.Session() as sess:
+    config = tf.ConfigProto(device_count = {'GPU': 0})
+    with tf.Session(config=config) as sess:
+    #with tf.Session() as sess:
         ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
-            saver.restore(sess, ckpt.model_checkpoint_path)
+            print(ckpt.all_model_checkpoint_paths)
+            saver.restore(sess, tf.train.latest_checkpoint(FLAGS.checkpoint_dir))
             global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
         else:
             print('No checkpoint file found')
@@ -64,7 +68,7 @@ def eval_once(saver, summary_writer, logits, top_k_op, summary_op):
             step = 0
             while step < num_iter and not coord.should_stop():
                 logi, predictions = sess.run([logits, top_k_op])
-                print(logi)
+                #print(logi)
                 true_count += np.sum(predictions)
                 step += 1
 

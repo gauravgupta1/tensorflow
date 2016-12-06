@@ -1,3 +1,5 @@
+#**********************************************************
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -17,20 +19,30 @@ import concurrent.futures
 import Queue
 from multiprocessing.pool import ThreadPool
 
+#**********************************************************
+
 IMAGE_SIZE_W = 60
 IMAGE_SIZE_H = 40
 
+# class 1 = {Vehicle}; class 0 = {everything else}
 NUM_CLASSES = 2
-# 2*10000 images (10000 each for classes: 0 and 1)
+# 100K images for class 0; 40K images for class 1
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 140000
 NUM_EXAMPLES_PER_EPOCH_FOR_EVAL = 2000
+
+#**********************************************************
 
 class CARIMSRecord(object):
     pass
 
+#**********************************************************
+
 def print_tensor_info(t):
     print (str(t.name) + ": " + str(t.get_shape()) + " size:" + str(t.get_shape().ndims) + " dtype:" + str(t.dtype))
 
+#**********************************************************
+
+#debugging
 def dump_batch_images(image_tensor, batch_size):
     init = tf.initialize_all_variables()
     sess = tf.Session()
@@ -48,6 +60,8 @@ def dump_batch_images(image_tensor, batch_size):
         coord.join(threads)
     print('batch dumped to /tmp/test')
 
+
+#**********************************************************
 
 def read_car_ims(filename_queue, class_label, eval_data=False):
     """Reads and parses images from car_ims image files.
@@ -75,19 +89,19 @@ def read_car_ims(filename_queue, class_label, eval_data=False):
     #orig_image = tf.image.decode_png(value, channels=3)
         
     resized_image = tf.image.resize_images(orig_image, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
-    print_tensor_info(resized_image)
+    #print_tensor_info(resized_image)
 
     #whitened_image = resized_image
     whitened_image = tf.image.per_image_whitening(resized_image)
-    #float_image =    tf.image.per_image_standardization(resized_image)
-    #whitened_image = tf.image.per_image_standardization(resized_image)
-    print_tensor_info(whitened_image)
+    #print_tensor_info(whitened_image)
 
 
     result.label = tf.fill([1], class_label)
     result.floatimage = whitened_image
 
     return result
+
+#**********************************************************
 
 def read_image_bounding_box(filename_queue, y1, x1, height, width):
     """Reads and parses image from a jpg.
@@ -112,16 +126,17 @@ def read_image_bounding_box(filename_queue, y1, x1, height, width):
 
     cropped_image = tf.image.crop_to_bounding_box(orig_image, y1, x1, height, width)
     resized_image = tf.image.resize_images(cropped_image, [IMAGE_SIZE_H, IMAGE_SIZE_W], 0, False)
-    print_tensor_info(resized_image)
+    #print_tensor_info(resized_image)
 
     #whitened_image = resized_image
     whitened_image = tf.image.per_image_whitening(resized_image)
-    print_tensor_info(whitened_image)
+    #print_tensor_info(whitened_image)
 
     float_image = whitened_image
 
     return float_image
 
+#**********************************************************
 
 def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, shuffle, eval_data):
     """Construct a queued batch of images and labels.
@@ -175,12 +190,13 @@ def _generate_image_and_label_batch(data_list, min_queue_examples, batch_size, s
         images = tf.random_shuffle(images)
         label_batch = tf.random_shuffle(label_batch)
 
-    print(images.get_shape())
+    #print(images.get_shape())
     #tf.image_summary('images', images)
 
     return images, tf.reshape(label_batch, [batch_size])
         
-        
+#**********************************************************
+
 def distorted_inputs(data_dir, batch_size):
     """Construct distorted input for CARIMS training using the Reader ops.
     
@@ -192,6 +208,8 @@ def distorted_inputs(data_dir, batch_size):
       images: Images: 4D tensor of [batch_size, IMAGE_SIZE_W, IMAGE_SIZE_H, 3] size.
       labels: Lables. 1D tensor of [batch_size] size.
     """
+
+#**********************************************************
 
 def inputs(eval_data, data_dir, batch_size):
     """Construct input for VEHICLEDETECTOR evaluation using the Reader ops.
@@ -206,8 +224,8 @@ def inputs(eval_data, data_dir, batch_size):
       labels: Labels. 1D tensor of [batch_size] size.
 
     """
-    matfile = loadmat(data_dir + "/cars_annos.mat", squeeze_me=True, struct_as_record=False)
-    type(matfile)
+    #matfile = loadmat(data_dir + "/cars_annos.mat", squeeze_me=True, struct_as_record=False)
+    #type(matfile)
     filenames = []
     filenames1 = []
     lowrange = 0
@@ -250,9 +268,12 @@ def inputs(eval_data, data_dir, batch_size):
 
     images, labels = _generate_image_and_label_batch(datalist, min_queue_examples, batch_size, shuffle=False, eval_data=eval_data)               
 
-    dump_batch_images(images, batch_size)
+    #dump_batch_images(images, batch_size)
 
     return images, labels
+
+#**********************************************************
+#**********************************************************
 
 def tile_image(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height):
     print("tile_image:tid:", threading.current_thread().ident)
@@ -282,8 +303,11 @@ def tile_image(q, graph, float_image, left_x, left_y, right_x, right_y, tile_wid
         q.put((image_tensor, x_tensor, y_tensor))
         return (image_tensor, x_tensor, y_tensor)
 
+#**********************************************************
+
 def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride, batch_size):
 
+    # convert image to tensor-of-tiles
     orig_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
     float_image = tf.cast(orig_image, tf.float32)
     image_height = orig_image.shape[0]
@@ -297,45 +321,6 @@ def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, ti
     q = Queue.Queue()
     pool = ThreadPool(processes=10)
 
-    # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
-    #     async_result = pool.apply_async(tile_image, (q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
-    #     jobs.append(async_result)
-        
-    # for t in jobs:
-    #     (x, y, z) = t.get()
-    #     t_list.append((x,y,z))
-    #     total_tile_count += x.get_shape()[0].value
-    #     print("total_tile_count:",total_tile_count)
-        
-    # threading.thread
-    # for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
-    #     t = threading.Thread(target=tile_image, args=(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
-    #     jobs.append(t)
-    #     t.daemon = True
-    #     t.start()
-
-    # for t in jobs:
-    #     t.join()
-
-    # while not q.empty():
-    #     (x, y, z) = q.get()
-    #     t_list.append((x,y,z))
-    #     total_tile_count += x.get_shape()[0].value
-        
-    # with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-    #     for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
-    #         jobs.append(executor.submit(tile_image, q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
-            
-    #     try:
-    #         for future in concurrent.futures.as_completed(jobs):
-    #             #list_lock.acquire()
-    #             (x,y,z) = future.result()
-    #             t_list.append((x,y,z))
-    #             total_tile_count += x.get_shape()[0].value
-    #             print("total_tile_count:",total_tile_count)
-    #             #list_lock.release()
-    #     except Exception as e:
-    #         print("Exception:%s" % (e))
 
     # All sequential - fresh reboot (43 secs)
     for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
@@ -347,13 +332,13 @@ def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, ti
             
             
     #if less than batch_size, fill with last    
-    # batch_count = image_tensor.get_shape()[0]
-    # batch_count = len(t_list)
-    # filler_count = batch_size - (batch_count%batch_size)
-    # print(filler_count)
-    # for b in xrange(0, filler_count, 1):
-    #     #image_tensor = tf.concat(0, [image_tensor, img_slice])
-    #     t_list[len(t_list)-1].append((img_slice,tf.fill([1],x),tf.fill([1] ,y)))
+    batch_count = image_tensor.get_shape()[0]
+    batch_count = len(t_list)
+    filler_count = batch_size - (batch_count%batch_size)
+    print(filler_count)
+    for b in xrange(0, filler_count, 1):
+        #image_tensor = tf.concat(0, [image_tensor, img_slice])
+        t_list[len(t_list)-1].append((img_slice,tf.fill([1],x),tf.fill([1] ,y)))
 
     end_time = time.time()
     print("tiling-delay:%d"%(end_time-begin_time))
@@ -373,6 +358,8 @@ def image2tensor(graph, cv_img, start_left_x, start_left_y, right_x, right_y, ti
     
     return retval,x,y,steps
     
+#**********************************************************
+
 def read_image(file_path, y1, x1, height, width, batch_size):
 
     """ 
@@ -393,3 +380,53 @@ def read_image(file_path, y1, x1, height, width, batch_size):
     dump_batch_images(image_data, batch_size)
 
     return image_data
+
+
+#**********************************************************
+#**********************************************************
+#**********************************************************
+# Scratch-pad-code-for-future-use
+#**********************************************************
+#**********************************************************
+#**********************************************************
+
+
+# for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+#     async_result = pool.apply_async(tile_image, (q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+#     jobs.append(async_result)
+        
+# for t in jobs:
+#     (x, y, z) = t.get()
+#     t_list.append((x,y,z))
+#     total_tile_count += x.get_shape()[0].value
+#     print("total_tile_count:",total_tile_count)
+
+# threading.thread
+# for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+#     t = threading.Thread(target=tile_image, args=(q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+#     jobs.append(t)
+#     t.daemon = True
+#     t.start()
+
+# for t in jobs:
+#     t.join()
+
+# while not q.empty():
+#     (x, y, z) = q.get()
+#     t_list.append((x,y,z))
+#     total_tile_count += x.get_shape()[0].value
+
+# with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+#     for (left_x, left_y) in startposition(start_left_x, start_left_y, right_x, right_y, tile_width, tile_height, stride):
+#         jobs.append(executor.submit(tile_image, q, graph, float_image, left_x, left_y, right_x, right_y, tile_width, tile_height, image_width, image_height))
+
+#     try:
+#         for future in concurrent.futures.as_completed(jobs):
+#             #list_lock.acquire()
+#             (x,y,z) = future.result()
+#             t_list.append((x,y,z))
+#             total_tile_count += x.get_shape()[0].value
+#             print("total_tile_count:",total_tile_count)
+#             #list_lock.release()
+#     except Exception as e:
+#         print("Exception:%s" % (e))

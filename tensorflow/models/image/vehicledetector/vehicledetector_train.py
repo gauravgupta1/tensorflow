@@ -1,3 +1,12 @@
+"""
+USAGE: $ python vehicledetector_train.py
+
+TRAINING DATA ORGANIZATION:
+data_dir = /home/gaurav/workspace/car_ims
+class0 = /home/gaurav/workspace/car_ims/class0/negative%06d.jpg
+class1 = /home/gaurav/workspace/car_ims/class1/%06d.jpg
+"""
+#**********************************************************
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -12,12 +21,16 @@ import signal
 import tensorflow as tf
 import vehicledetector
 import vehicledetector_input
+import freeze_graph
+
+#**********************************************************
 
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_string('train_dir', '/tmp/vehicledetector_train',
                            """Directory where to write event logs """
                            """and checkpoint. """)
+tf.app.flags.DEFINE_string('model_dir', '/tmp/vehicledetector_train', """Directory where model is saved """)
 tf.app.flags.DEFINE_integer('max_steps', 1000000,
                            """Number of batches to run. """)
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
@@ -28,6 +41,11 @@ IMAGE_SIZE_W = vehicledetector_input.IMAGE_SIZE_W
 IMAGE_SIZE_H = vehicledetector_input.IMAGE_SIZE_H
 
 _should_exit = False
+
+input_graph_name = "input_graph.pb"
+output_graph_name = "output_graph.pb"
+
+#**********************************************************
 
 def train():
     """Train vehicle detector for a number of steps """
@@ -62,7 +80,7 @@ def train():
         init = tf.initialize_all_variables()
 
         # start running operations on the Graph.
-        sess = tf.Session(config=tf.ConfigProto(log_device_placement=FLAGS.log_device_placement))
+        sess = tf.Session(config=tf.ConfigProto(log_device_placement=FLAGS.log_device_placement, inter_op_parallelism_threads=3, intra_op_parallelism_threads=3))
         sess.run(init)
 
         #start the queue runners
@@ -70,6 +88,7 @@ def train():
 
         summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
 
+        last_checkpoint_step = 0
         for step in xrange(FLAGS.max_steps):
 
             if _should_exit == True:
@@ -102,10 +121,43 @@ def train():
 
             if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
                 checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step)
-                
+                last_checkpoint_step = step
+                saver.save(sess, checkpoint_path, global_step=last_checkpoint_step)
+
+        # save graph with last saved checkpoint file
+        if last_checkpoint_step > 0:
+            save_graph(sess, last_checkpoint_step)
+
+#**********************************************************
+
+def save_graph(sess, step):
+
+    tf.train.write_graph(sess.graph.as_graph_def(), FLAGS.model_dir, input_graph_name)
+
+    input_graph_path = os.path.join(FLAGS.model_dir, input_graph_name)
+    input_saver_def_path = ""
+    input_binary = False
+    input_checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt-' + str(step))
+    output_node_names = "softmax_linear"
+    restore_op_name = "save/restore_all"
+    filename_tensor_name = "save/Const:0"
+    output_graph_path = os.path.join(FLAGS.model_dir, output_graph_name)
+    clear_devices = False
+
+    freeze_graph.freeze_graph(input_graph_path,
+                              input_saver_def_path,
+                              input_binary,
+                              input_checkpoint_path,
+                              output_node_names,
+                              restore_op_name,
+                              filename_tensor_name,
+                              output_graph_path,
+                              clear_devices)
+    
+#**********************************************************
+
 def signal_handler(signal, frame):
-    print('You pressed Ctrl+C')
+    print('You pressed Ctrl+C: Exiting...')
     global _should_exit
     _should_exit = True
     
@@ -113,9 +165,16 @@ def main(argv=None):
     signal.signal(signal.SIGINT, signal_handler)
     if tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.DeleteRecursively(FLAGS.train_dir)
+    if tf.gfile.Exists(FLAGS.model_dir):
+        tf.gfile.DeleteRecursively(FLAGS.model_dir)
     tf.gfile.MakeDirs(FLAGS.train_dir)
+    tf.gfile.MakeDirs(FLAGS.model_dir)
     train()
+
+#**********************************************************
 
 #USAGE: python vehicledetector_train.py    
 if __name__ == '__main__':
     tf.app.run()
+
+#**********************************************************

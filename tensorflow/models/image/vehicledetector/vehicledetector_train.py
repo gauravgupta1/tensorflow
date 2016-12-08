@@ -119,26 +119,26 @@ def train():
                 summary_str = sess.run(summary_op, feed_dict=feed_dict)
                 summary_writer.add_summary(summary_str, step)
 
-            if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
+            if step % 50 == 0 or (step + 1) == FLAGS.max_steps:
                 checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
                 last_checkpoint_step = step
                 saver.save(sess, checkpoint_path, global_step=last_checkpoint_step)
+        tf.train.write_graph(sess.graph.as_graph_def(), FLAGS.model_dir, input_graph_name)
 
-        # save graph with last saved checkpoint file
-        if last_checkpoint_step > 0:
-            save_graph(sess, last_checkpoint_step)
+
+    # save graph with last saved checkpoint file
+    if last_checkpoint_step >= 0:
+        save_graph(last_checkpoint_step)
 
 #**********************************************************
 
-def save_graph(sess, step):
-
-    tf.train.write_graph(sess.graph.as_graph_def(), FLAGS.model_dir, input_graph_name)
+def save_graph(step):
 
     input_graph_path = os.path.join(FLAGS.model_dir, input_graph_name)
     input_saver_def_path = ""
     input_binary = False
-    input_checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt-' + str(step))
-    output_node_names = "softmax_linear"
+    input_checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+    output_node_names = "softmax_linear/softmax_linear"
     restore_op_name = "save/restore_all"
     filename_tensor_name = "save/Const:0"
     output_graph_path = os.path.join(FLAGS.model_dir, output_graph_name)

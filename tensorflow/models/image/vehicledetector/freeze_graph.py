@@ -80,9 +80,9 @@ def freeze_graph(input_graph, input_saver, input_binary, input_checkpoint,
     print("Input saver file '" + input_saver + "' does not exist!")
     return -1
 
-  if not tf.gfile.Glob(input_checkpoint):
-    print("Input checkpoint '" + input_checkpoint + "' doesn't exist!")
-    return -1
+#  if not tf.gfile.Glob(input_checkpoint):
+#    print("Input checkpoint '" + input_checkpoint + "' doesn't exist!")
+#    return -1
 
   if not output_node_names:
     print("You need to supply the name of a node to --output_node_names.")

@@ -44,6 +44,7 @@ tf.app.flags.DEFINE_string('data_dir', '/home/gaurav/workspace/car_ims',
                            """Path to the car images""")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
+tf.app.flags.DEFINE_string('checkpoint_dir', '/tmp/vehicledetector_train', """Directory where model is saved""")
 
 
 IMAGE_SIZE_W = vehicledetector_input.IMAGE_SIZE_W
